@@ -28,7 +28,7 @@ import {DecentralizedStableCoin} from "./DecentralizedStableCoin.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
-
+import {OracleLib} from "./libraries/OracleLib.sol";
 /**
  * @title  - DSCEngine
  * @author - @Adeshh
@@ -48,6 +48,7 @@ import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/interfaces/Ag
  * for minting and redeeming DSC, as well as depositing and withdrawing collateral.
  * @notice This contract is based on the MakerDAO DSS system
  */
+
 contract DSCEngine is ReentrancyGuard {
     ///////////////////////
     // Errors           //
@@ -60,6 +61,9 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__MintFailed();
     error DSCEngine__HealthFactorOk(uint256 healthFactor);
     error DSCEngine__HealthFactorNotImproved();
+
+    using OracleLib for AggregatorV3Interface;
+
     ///////////////////////
     // State Variables   //
     ///////////////////////
@@ -212,6 +216,7 @@ contract DSCEngine is ReentrancyGuard {
     function liquidate(address collateralToken, address userToLiquidate, uint256 debtToCover)
         external
         moreThanZero(debtToCover)
+        isAllowedToken(collateralToken)
         nonReentrant
     {
         uint256 startingUserHealthFactor = _healthFactor(userToLiquidate);
@@ -232,8 +237,6 @@ contract DSCEngine is ReentrancyGuard {
 
         _revertIfHealthFactorIsBroken(msg.sender); //Dont think liquidator paying dsc on behalf of user is going to  reduce liquidator health factor. but just in case.
     }
-
-   
 
     ///////////////////////////////////////
     // Private & Internal view Functions //
@@ -296,9 +299,14 @@ contract DSCEngine is ReentrancyGuard {
         i_dsc.burn(amountToBurn);
     }
 
-    function _calculateHealthFactor(uint256 totalDscMinted, uint256 totalCollateralValueInUsd) internal pure returns (uint256) {
+    function _calculateHealthFactor(uint256 totalDscMinted, uint256 totalCollateralValueInUsd)
+        internal
+        pure
+        returns (uint256)
+    {
         if (totalDscMinted == 0) return type(uint256).max;
-        uint256 collateralAdjustedForThreshold = (totalCollateralValueInUsd * LIQUIDATION_THRESHOLD) / LIQUIDATION_PRECISION;
+        uint256 collateralAdjustedForThreshold =
+            (totalCollateralValueInUsd * LIQUIDATION_THRESHOLD) / LIQUIDATION_PRECISION;
         return (collateralAdjustedForThreshold * PRECISION) / totalDscMinted;
     }
     //////////////////////////////////////
@@ -310,6 +318,7 @@ contract DSCEngine is ReentrancyGuard {
      * @notice - This function is used to get the total value of the collateral deposited by the user in USD by looping through all
      *           the collateral tokens and then mapping it to the price feed.
      */
+
     function getAccountTotalCollateralValue(address user) public view returns (uint256 totalCollateralValueInUsd) {
         for (uint256 i = 0; i < s_collateralTokens.length; i++) {
             address token = s_collateralTokens[i];
@@ -327,13 +336,13 @@ contract DSCEngine is ReentrancyGuard {
      */
     function getUsdValue(address token, uint256 amount) public view returns (uint256) {
         AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
-        (, int256 price,,,) = priceFeed.latestRoundData();
+        (, int256 price,,,) = priceFeed.staleCheckLatestRoundData();
         return ((uint256(price) * amount * ADDITIONAL_FEED_PRECISION)) / PRECISION;
     }
 
     function getTokenAmountFromUsd(address token, uint256 usdAmountInWei) public view returns (uint256) {
         AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
-        (, int256 price,,,) = priceFeed.latestRoundData();
+        (, int256 price,,,) = priceFeed.staleCheckLatestRoundData();
         return (usdAmountInWei * PRECISION) / (uint256(price) * ADDITIONAL_FEED_PRECISION);
     }
 
@@ -345,7 +354,11 @@ contract DSCEngine is ReentrancyGuard {
         (totalDscMinted, totalCollateralValueInUsd) = _getAccountInformation(user);
     }
 
-    function calculateHealthFactor(uint256 totalDscMinted, uint256 totalCollateralValueInUsd) public pure returns (uint256) {
+    function calculateHealthFactor(uint256 totalDscMinted, uint256 totalCollateralValueInUsd)
+        public
+        pure
+        returns (uint256)
+    {
         return _calculateHealthFactor(totalDscMinted, totalCollateralValueInUsd);
     }
 
@@ -392,6 +405,4 @@ contract DSCEngine is ReentrancyGuard {
     function getAdditionalFeedPrecision() public pure returns (uint256) {
         return ADDITIONAL_FEED_PRECISION;
     }
-
-   
 }

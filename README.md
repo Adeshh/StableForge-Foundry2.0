@@ -18,14 +18,17 @@ The system is similar to DAI but without governance, fees, and backed only by WE
 
 1. **DecentralizedStableCoin.sol**: The ERC20 stablecoin token that can be minted and burned by the DSCEngine
 2. **DSCEngine.sol**: The core engine that manages collateral deposits, DSC minting/burning, and maintains the health factor
+3. **OracleLib.sol**: Library for checking Chainlink price feed staleness and preventing use of outdated prices
 
 ### Key Features
 
 - **Collateral Management**: Users can deposit WETH or WBTC as collateral
 - **DSC Minting**: Users can mint DSC tokens against their collateral (up to 50% of collateral value)
 - **Health Factor**: System ensures users maintain a health factor > 1 to prevent undercollateralization
-- **Liquidation**: Under-collateralized positions can be liquidated
+- **Liquidation**: Under-collateralized positions can be liquidated with a 10% bonus for liquidators
+- **Stale Price Protection**: OracleLib checks for stale Chainlink price feeds (3 hour timeout) to prevent use of outdated prices
 - **Reentrancy Protection**: All functions use OpenZeppelin's ReentrancyGuard
+- **Input Validation**: All functions validate inputs and revert with custom errors
 
 ## Prerequisites
 
@@ -89,14 +92,22 @@ forge script script/DeployDSC.s.sol:DeployDSC --rpc-url $SEPOLIA_RPC_URL --priva
 
 ## Test Coverage
 
-The project includes comprehensive unit tests covering:
+The project includes comprehensive test coverage:
+
+### Unit Tests
 - Constructor tests
 - Price feed tests
 - Collateral deposit/redeem tests
 - DSC minting/burning tests
 - Health factor validation
+- Liquidation tests (including partial liquidation, health factor improvement, bonus collateral)
 - Event emission tests
 - Error handling tests
+
+### Invariant/Fuzz Tests
+- Protocol value must exceed total DSC supply
+- Handler-based fuzz testing with random addresses
+- Continue-on-revert and stop-on-revert testing strategies
 
 ## Project Structure
 
@@ -104,17 +115,22 @@ The project includes comprehensive unit tests covering:
 .
 ├── src/
 │   ├── DecentralizedStableCoin.sol  # The stablecoin ERC20 token
-│   └── DSCEngine.sol                # Core engine contract
+│   ├── DSCEngine.sol                 # Core engine contract
+│   └── libraries/
+│       └── OracleLib.sol             # Price feed staleness checker
 ├── script/
-│   ├── DeployDSC.s.sol              # Deployment script
-│   └── HelperConfig.s.sol           # Network configuration helper
+│   ├── DeployDSC.s.sol               # Deployment script
+│   └── HelperConfig.s.sol            # Network configuration helper
 ├── test/
 │   ├── mocks/
-│   │   ├── ERC20Mock.sol            # Mock ERC20 token for testing
-│   │   └── MockV3Aggregator.sol     # Mock Chainlink price feed
-│   └── unit/
-│       └── DSCEngineTest.t.sol      # Unit tests for DSCEngine
-└── lib/                             # Dependencies (submodules)
+│   │   ├── ERC20Mock.sol             # Mock ERC20 token for testing
+│   │   └── MockV3Aggregator.sol      # Mock Chainlink price feed
+│   ├── unit/
+│   │   └── DSCEngineTest.t.sol       # Unit tests for DSCEngine
+│   └── fuzz/
+│       ├── continueOnRevert/          # Fuzz tests that continue on revert
+│       └── stopOnRevert/              # Fuzz tests that stop on revert
+└── lib/                              # Dependencies (submodules)
 ```
 
 ## Security Considerations
@@ -123,6 +139,9 @@ The project includes comprehensive unit tests covering:
 - ReentrancyGuard protection on state-changing functions
 - Health factor checks prevent undercollateralization
 - Input validation on all user-facing functions
+- Stale price feed protection prevents use of outdated oracle data
+- Liquidation ensures protocol remains overcollateralized
+- Custom errors for gas-efficient reverts
 
 ## License
 
